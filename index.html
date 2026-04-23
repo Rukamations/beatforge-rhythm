@@ -3904,7 +3904,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         }
         
         editorMode = isEditor;
-        isStoryModePlay = false;   // will be set to true by story loader if needed
+        // NOTE: isStoryModePlay is NOT reset here anymore; it's set to true by the story loader just before calling startGame
         const selectedChartId = document.getElementById('chart-select').value;
         currentCharterName = null;
         isGameOver = false;
