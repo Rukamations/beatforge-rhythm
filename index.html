@@ -1800,7 +1800,7 @@
         {
             name: "Test",
             audioExtensions: ['.mp3', '.ogg', '.wav', '.mp4', '.webm'],
-            chartFile: "Story Mode/Data/Test-Chart.json"
+            chartFile: "Story Mode/Data/Test-Chart.json"   // will be used as base path without extension in the improved loader
         }
     ];
 
@@ -5184,7 +5184,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
     ui.restartSongBtn.addEventListener('click', () => restartSong());
     ui.quitSongBtn.addEventListener('click', () => quitSong());
 
-    // ---- Story Mode ----
+    // ---- Improved Story Mode Loader (with extension fallback & space encoding) ----
     function openStoryMode() {
         populateStorySongs();
         screens.story.classList.remove('hidden');
@@ -5253,12 +5253,36 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
             const detectedBPM = await detectBPM(audioBuffer);
             currentBPM = detectedBPM;
 
-            // 5) Fetch and parse chart
-            const chartResponse = await fetch(song.chartFile);
-            if (!chartResponse.ok) throw new Error('Chart file not found');
-            const chartData = await chartResponse.json();
+            // 5) Fetch chart – try multiple extensions and encode spaces
+            const chartBasePath = `Story Mode/Data/${song.name}-Chart`;   // No extension here
+            const chartExtensions = ['.json', '.txt', ''];               // Try these in order
+            let chartData = null;
+            let loadedChartUrl = null;
 
-            // Chart format: { bpm, notes: [[time, col, duration, text?, customSpeed?], ...] }
+            for (const ext of chartExtensions) {
+                const url = chartBasePath + ext;
+                // Replace spaces with %20 for safety
+                const safeUrl = url.replace(/ /g, '%20');
+                console.log(`Trying chart URL: ${safeUrl}`);
+                try {
+                    const resp = await fetch(safeUrl);
+                    if (resp.ok) {
+                        chartData = await resp.json();
+                        loadedChartUrl = safeUrl;
+                        break;
+                    }
+                } catch (e) {
+                    // Not found – try next extension
+                }
+            }
+
+            if (!chartData) {
+                throw new Error(`Chart file not found. Tried: ${chartBasePath}.json, .txt, and no extension`);
+            }
+
+            console.log(`Loaded chart from: ${loadedChartUrl}`);
+
+            // Parse the chart data (same format as before)
             let parsedNotes = chartData.notes;
             if (!Array.isArray(parsedNotes)) throw new Error('Invalid chart: notes missing');
             if (chartData.bpm) currentBPM = chartData.bpm;
@@ -5290,8 +5314,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
             loadingH2.innerText = 'Analyzing Audio & Generating Chart...';
             loadingP.innerText = 'Finding the beats!';
 
-            // Make sure to start with no editor mode and bypass chart selection
-            startGame(false);   // startGame will use storyModeNotes because we set it
+            startGame(false);   // will use storyModeNotes
 
         } catch (error) {
             console.error('Story mode load error:', error);
