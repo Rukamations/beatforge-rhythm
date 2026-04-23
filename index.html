@@ -1800,7 +1800,12 @@
         {
             name: "Test",
             audioExtensions: ['.mp3', '.ogg', '.wav', '.mp4', '.webm'],
-            chartFile: "Story Mode/Data/Test-Chart.json"   // will be used as base path without extension in the improved loader
+            chartFile: "Story Mode/Data/Test-Chart.json"
+        },
+        {
+            name: "Sink To The Deep Sea World (Static Mix)",
+            audioExtensions: ['.mp3', '.ogg', '.wav', '.mp4', '.webm'],
+            chartFile: "Story Mode/Data/sttdsw_staticmix-Chart.json"
         }
     ];
 
@@ -2102,12 +2107,11 @@
         }
     }
     function tryUnlockRuka(score) {
+        // Achievement still unlocks under the original condition, but no longer gives Ruka
         if (!rukaUnlocked && songQualifiesForSkydiver() && score > 1000000) {
-            saveUnlockRuka();
-            updateAssistDropdown();
-            unlockAchievement('skydiver');
-            showAlert("🏆 Achievement Unlocked: Skydiver!\n✨ New assist unlocked: Ruka \"Snow\" - <Frostbite>! ✨");
-            rebuildAssistCards();
+            if (!achievementsUnlocked.has('skydiver')) {
+                unlockAchievement('skydiver');
+            }
         }
     }
 
@@ -2177,6 +2181,7 @@
     let localImportNotes = [];
     let notes = [];
     let storyModeNotes = null;   // pre-loaded story notes override
+    let isStoryModePlay = false; // true when playing a story mode song
     let score = 0, combo = 0, maxCombo = 0;
     let stats = { perfect: 0, great: 0, bad: 0, miss: 0 };
     let hitEffects = []; 
@@ -2244,8 +2249,8 @@
             } catch(e) { achievementsUnlocked = new Set(); }
         }
         if (achievementsUnlocked.has('skydiver') && !rukaUnlocked) {
-            rukaUnlocked = true;
-            saveUnlockRuka();
+            // In the old system skydiver gave Ruka; we keep the achievement but won't auto‑unlock Ruka anymore
+            // (it will now be handled by story mode)
         }
         renderAchievements();
     }
@@ -2261,11 +2266,7 @@
             const ach = achievementsList.find(a => a.id === id);
             if (ach) showAlert(`🏆 Achievement Unlocked: ${ach.name}!\n${ach.hoverDesc}`);
         }
-        if (id === 'skydiver' && !rukaUnlocked) {
-            rukaUnlocked = true;
-            saveUnlockRuka();
-            rebuildAssistCards();
-        }
+        // No longer auto‑unlock Ruka
         return true;
     }
     function isAchievementUnlocked(id) {
@@ -3326,6 +3327,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
                 if (gameOverOverlay) gameOverOverlay.remove();
                 isGameOver = true;
                 isGameOverAnimating = false;
+                isStoryModePlay = false;  // reset story flag on game over
                 if (audioSource) try { audioSource.stop(); } catch(e) {}
                 screens.hud.classList.add('hidden');
                 showSongInfo(false);
@@ -3902,6 +3904,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         }
         
         editorMode = isEditor;
+        isStoryModePlay = false;   // will be set to true by story loader if needed
         const selectedChartId = document.getElementById('chart-select').value;
         currentCharterName = null;
         isGameOver = false;
@@ -4079,6 +4082,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         if (audioSource) try { audioSource.stop(); } catch(e) {}
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
+        isStoryModePlay = false;  // restarting resets story mode play
         hidePauseScreen();
         startCountdownAndResume();
     }
@@ -4092,6 +4096,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         if (audioSource) try { audioSource.stop(); } catch(e) {}
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
+        isStoryModePlay = false;  // quitting resets story mode play
         screens.pause.classList.add('hidden');
         screens.hud.classList.add('hidden');
         showSongInfo(false);
@@ -4123,6 +4128,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         if (audioSource) try { audioSource.stop(); } catch(e) {}
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
+        isStoryModePlay = false;  // retrying from game over resets story mode play
         screens.gameover.classList.add('hidden');
         screens.hud.classList.remove('hidden');
         showSongInfo(true);
@@ -4191,6 +4197,19 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
                 }
             }
             saveCurrency();
+        }
+
+        // Story Mode reward: beating Sink To The Deep Sea World unlocks Ruka + achievement
+        if (isStoryModePlay && currentSongName === "Sink To The Deep Sea World (Static Mix)") {
+            if (!rukaUnlocked) {
+                saveUnlockRuka();
+                updateAssistDropdown();
+                rebuildAssistCards();
+                showAlert("✨ New assist unlocked: Ruka \"Snow\" - <Frostbite>! ✨");
+            }
+            if (!achievementsUnlocked.has('skydiver')) {
+                unlockAchievement('skydiver', false);
+            }
         }
         
         isPlaying = false;
@@ -5037,8 +5056,8 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         document.getElementById('ed-upload').innerHTML = "☁️ Upload to Cloud";
     });
 
-    ui.restartBtn.addEventListener('click', () => { screens.end.classList.add('hidden'); screens.start.classList.remove('hidden'); updateDoorVisibility(); ui.fileInput.value = ''; showSongInfo(false); showHealthBar(false); });
-    ui.gameoverReturnBtn.addEventListener('click', () => { screens.gameover.classList.add('hidden'); screens.start.classList.remove('hidden'); updateDoorVisibility(); showSongInfo(false); showHealthBar(false); });
+    ui.restartBtn.addEventListener('click', () => { screens.end.classList.add('hidden'); screens.start.classList.remove('hidden'); isStoryModePlay = false; updateDoorVisibility(); ui.fileInput.value = ''; showSongInfo(false); showHealthBar(false); });
+    ui.gameoverReturnBtn.addEventListener('click', () => { screens.gameover.classList.add('hidden'); screens.start.classList.remove('hidden'); isStoryModePlay = false; updateDoorVisibility(); showSongInfo(false); showHealthBar(false); });
     ui.gameoverRetryBtn.addEventListener('click', async () => {
         screens.gameover.classList.add('hidden');
         if (audioContext && audioContext.state !== 'running') await audioContext.resume();
@@ -5084,7 +5103,6 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         } else {
             if (screens.start.classList.contains('hidden')) {
                 screens.start.classList.remove('hidden');
-                updateDoorVisibility();
                 screens.pause.classList.add('hidden');
                 screens.gameover.classList.add('hidden');
                 screens.end.classList.add('hidden');
@@ -5184,7 +5202,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
     ui.restartSongBtn.addEventListener('click', () => restartSong());
     ui.quitSongBtn.addEventListener('click', () => quitSong());
 
-    // ---- Improved Story Mode Loader (with extension fallback & space encoding) ----
+    // ---- Story Mode Functions (with extension fallback & space encoding) ----
     function openStoryMode() {
         populateStorySongs();
         screens.story.classList.remove('hidden');
@@ -5309,7 +5327,8 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
             currentCharterName = 'Story Mode';
             songDuration = audioBuffer.duration;
 
-            // 7) Hide loading screen and start the game
+            // 7) Mark as story mode play and start
+            isStoryModePlay = true;
             screens.loading.classList.add('hidden');
             loadingH2.innerText = 'Analyzing Audio & Generating Chart...';
             loadingP.innerText = 'Finding the beats!';
