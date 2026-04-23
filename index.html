@@ -5202,7 +5202,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
     ui.restartSongBtn.addEventListener('click', () => restartSong());
     ui.quitSongBtn.addEventListener('click', () => quitSong());
 
-    // ---- Story Mode Functions (with extension fallback & space encoding) ----
+    // ---- Story Mode Functions (with extension fallback, space encoding, and background video support) ----
     function openStoryMode() {
         populateStorySongs();
         screens.story.classList.remove('hidden');
@@ -5327,7 +5327,18 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
             currentCharterName = 'Story Mode';
             songDuration = audioBuffer.duration;
 
-            // 7) Mark as story mode play and start
+            // 7) Configure background video if the audio file is actually a video
+            if (/\.(mp4|webm|ogg)$/i.test(audioResult.url)) {
+                videoUrl = audioResult.url;
+                document.getElementById('bg-video').src = videoUrl;
+            } else {
+                videoUrl = null;
+                albumArtUrl = null;
+                document.getElementById('bg-video').src = '';
+            }
+            applyBackground();
+
+            // 8) Mark as story mode play and start
             isStoryModePlay = true;
             screens.loading.classList.add('hidden');
             loadingH2.innerText = 'Analyzing Audio & Generating Chart...';
