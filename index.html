@@ -566,6 +566,17 @@
             gap: 4px;
             overflow: hidden;
         }
+        /* Cutscene mode: hide item list, expand right panel */
+        .xp-content.cutscene-mode .xp-item-area {
+            display: none;
+        }
+        .xp-content.cutscene-mode .xp-right-panel {
+            flex: 1;
+        }
+        .xp-content.cutscene-mode .xp-options {
+            pointer-events: none;
+            opacity: 0.5;
+        }
         /* Left sidebar (categories) - hidden on very small screens */
         .xp-sidebar {
             width: 150px;
@@ -2122,7 +2133,6 @@
         }
     }
     function tryUnlockRuka(score) {
-        // Achievement still unlocks under the original condition, but no longer gives Ruka
         if (!rukaUnlocked && songQualifiesForSkydiver() && score > 1000000) {
             if (!achievementsUnlocked.has('skydiver')) {
                 unlockAchievement('skydiver');
@@ -2270,11 +2280,10 @@
                     dailyDate: '',
                     dailyProgress: 0,
                     dailyCompleted: false,
-                    dailyClaimed: false,  // NEW: claim state
-                    mainQuests: [] // array of { id, progress, completed, claimed }
+                    dailyClaimed: false,
+                    mainQuests: []
                 };
             }
-            // Ensure new fields exist in old saves
             if (questData.dailyClaimed === undefined) questData.dailyClaimed = false;
             questData.mainQuests.forEach(q => {
                 if (q.claimed === undefined) q.claimed = false;
@@ -2295,12 +2304,11 @@
             questData.dailyDate = today;
             questData.dailyProgress = 0;
             questData.dailyCompleted = false;
-            questData.dailyClaimed = false; // reset claim for new day
+            questData.dailyClaimed = false;
             saveQuests();
         }
     }
 
-    // Unlock a main quest (by id)
     function unlockMainQuest(id) {
         if (!questData.mainQuests.find(q => q.id === id)) {
             questData.mainQuests.push({ id, progress: 0, completed: false, claimed: false });
@@ -2308,19 +2316,15 @@
         }
     }
 
-    // Advance quest progress after a song ends (not game over)
     function updateQuestProgress() {
         resetDailyIfNeeded();
-        // Daily quest: "Complete 1 song"
         if (!questData.dailyCompleted) {
             questData.dailyProgress++;
             if (questData.dailyProgress >= 1) {
                 questData.dailyCompleted = true;
-                // No longer auto-award Fame
             }
             saveQuests();
         }
-        // Main quests
         questData.mainQuests.forEach(q => {
             if (!q.completed) {
                 if (q.id === 'band_quest') {
@@ -2332,10 +2336,9 @@
             }
         });
         saveQuests();
-        updateShopPing(); // ping may need update
+        updateShopPing();
     }
 
-    // Claim functions
     function claimDailyReward() {
         if (!questData.dailyCompleted || questData.dailyClaimed) return;
         questData.dailyClaimed = true;
@@ -2344,20 +2347,45 @@
         saveQuests();
         showAlert(`Daily quest claimed! +${DAILY_QUEST_REWARD} Fame`, false);
         updateShopPing();
-        if (shopState.mode === 'missions') renderShopContent(); // refresh missions tab if open
+        if (shopState.mode === 'missions') renderShopContent();
     }
 
     function claimMainQuest(q) {
         if (!q.completed || q.claimed) return;
         q.claimed = true;
         saveQuests();
-        // For now, no reward, just mark as claimed
-        showAlert('Main quest claimed!', false);
+        // For band_quest, trigger cutscene instead of normal claim alert
+        if (q.id === 'band_quest') {
+            startShopCutscene();
+        } else {
+            showAlert('Main quest claimed!', false);
+        }
         updateShopPing();
         if (shopState.mode === 'missions') renderShopContent();
     }
 
-    // Shop ping indicator
+    function startShopCutscene() {
+        const xpContent = document.querySelector('.xp-content');
+        if (!xpContent) return;
+        xpContent.classList.add('cutscene-mode');
+        
+        // Placeholder cutscene dialogue
+        const cutsceneLines = [
+            "* ...you actually did it.",
+            "* I wasn't sure if you were serious about helping.",
+            "* But here you are. Thank you.",
+            "* I'll have something for you soon, I promise.",
+            "* Just wait a little longer."
+        ];
+        setShopDialogue(cutsceneLines, () => {
+            // end cutscene
+            const xp = document.querySelector('.xp-content');
+            if (xp) xp.classList.remove('cutscene-mode');
+            // Refresh the shop to show normal layout (missions tab)
+            renderShopContent();
+        });
+    }
+
     function updateShopPing() {
         const ping = document.getElementById('shop-ping');
         if (!ping) return;
@@ -2381,7 +2409,6 @@
         }
         if (achievementsUnlocked.has('skydiver') && !rukaUnlocked) {
             // In the old system skydiver gave Ruka; we keep the achievement but won't auto‑unlock Ruka anymore
-            // (it will now be handled by story mode)
         }
         renderAchievements();
     }
@@ -2397,7 +2424,6 @@
             const ach = achievementsList.find(a => a.id === id);
             if (ach) showAlert(`🏆 Achievement Unlocked: ${ach.name}!\n${ach.hoverDesc}`);
         }
-        // No longer auto‑unlock Ruka
         return true;
     }
     function isAchievementUnlocked(id) {
@@ -2908,7 +2934,7 @@
         return true;
     }
 
-    // ==================== SHOP SYSTEM (updated with skins and missions) ====================
+    // ==================== SHOP SYSTEM (updated with skins, missions, cutscene) ====================
     const shopItems = [
         { name: "Simplex", cost: 100, description: noteskins.simplex.desc, skinId: 'simplex', type: 'skin' },
         { name: "Step Arrows", cost: 1000, description: noteskins.steparrows.desc, skinId: 'steparrows', type: 'skin' },
@@ -3031,6 +3057,9 @@
     }
     
     function closeShop() {
+        // Remove cutscene mode if active
+        const xpContent = document.querySelector('.xp-content');
+        if (xpContent) xpContent.classList.remove('cutscene-mode');
         document.getElementById('shop-screen').classList.add('hidden');
         shopMusic.pause();
         shopMusic.currentTime = 0;
@@ -3089,7 +3118,6 @@
             mediaContainer.classList.remove('hidden');
             updateMediaPlayerUI();
         } else if (mode === 'missions') {
-            // Deactivate action buttons
             shopBtn.classList.remove('selected');
             talkBtn.classList.remove('selected', 'talk-active');
             mediaBtn.classList.remove('selected');
@@ -3109,7 +3137,7 @@
             shopItems.forEach((item) => {
                 if (item.type === 'skin') {
                     const skin = noteskins[item.skinId];
-                    if (totalFame < skin.fameUnlock) return; // not unlocked yet
+                    if (totalFame < skin.fameUnlock) return;
                 }
                 const isOwned = item.type === 'skin' && ownedSkins.has(item.skinId);
                 const canAfford = totalTokens >= item.cost;
@@ -3143,7 +3171,7 @@
                     if (isRukaTopic && !rukaTopicSeen) {
                         rukaTopicSeen = true;
                         saveShopFlags();
-                        updateDialogueOptions(); // refresh to add new topics
+                        updateDialogueOptions();
                         document.querySelector('[data-action="talk"]').classList.remove('highlight');
                     }
                     setShopDialogue([...opt.lines], null);
@@ -3152,7 +3180,6 @@
                 listDiv.appendChild(div);
             });
         } else if (shopState.mode === 'missions') {
-            // Daily mission
             const dailyItem = document.createElement('div');
             dailyItem.className = 'xp-item';
             const dailyProgress = questData.dailyCompleted ? 1 : questData.dailyProgress;
@@ -3170,7 +3197,6 @@
             `;
             listDiv.appendChild(dailyItem);
             
-            // Main missions
             questData.mainQuests.forEach(q => {
                 const div = document.createElement('div');
                 div.className = 'xp-item';
@@ -3310,22 +3336,9 @@
         }
     });
 
-    // Click "About the Band" dialogue also unlocks band quest
-    (function() {
-        const origRender = renderShopContent;
-        renderShopContent = function() {
-            origRender();
-            if (shopState.mode === 'talk') {
-                // Already handled clicks inside
-            }
-        };
-    })();
-
-    // Override the dialogue option click for band topic to unlock quest
     const origRenderShop = renderShopContent;
     renderShopContent = function() {
         origRenderShop();
-        // Re-attach listeners for the band topic after rendering
         if (shopState.mode === 'talk') {
             const bandElement = [...document.querySelectorAll('.xp-dialogue-option')].find(el => el.querySelector('span').textContent === 'About the Band');
             if (bandElement && !bandElement.dataset.questBound) {
@@ -3344,10 +3357,9 @@
         });
     });
 
-    // Expose claim functions to global scope for inline buttons
     window.claimDailyReward = claimDailyReward;
     window.claimMainQuest = claimMainQuest;
-    window.questData = questData; // needed for inline event handlers
+    window.questData = questData;
 
     // ==================== INVENTORY SCREEN ====================
     function openInventory() {
@@ -3382,7 +3394,6 @@
                 const activeColor = currentNoteColors[i];
                 skin.drawReceptor(pCtx, x, 70, colWidth, 20, activeColor, false);
                 if (skin === noteskins.steparrows) {
-                    // preview arrow
                     skin.drawNote(pCtx, x, 40, colWidth, 20, i, activeColor, true);
                 } else {
                     skin.drawNote(pCtx, x, 40, colWidth, 20, i, activeColor, true);
@@ -3417,7 +3428,6 @@
 
     // ==================== CREDITS SCREEN ====================
     function openCredits() {
-        // Set editable credits text here
         const creditsText = `BeatForge is an AI-generated rhythm game created through conversations with DeepSeek and Gemini.
 
 ---Sources---
@@ -3445,7 +3455,6 @@ The main inspirations for this game to exist are AudioSurf 2 for being the first
         const acceptBtn = document.getElementById('disclaimer-accept-btn');
         const timerSpan = document.getElementById('disclaimer-timer');
         
-        // Editable disclaimer text
         const disclaimerText = `This game was generated almost entirely through conversations with AI (DeepSeek and Gemini). 
 It is a passion project made almost entirely when I have free time during school classes. I would love to learn HTML and make this better AND by hand, but I currently can't.
 
@@ -3458,7 +3467,6 @@ Please note:
 Thank you for playing, and I hope you enjoy this little rhythm game!`;
         document.getElementById('disclaimer-text').innerText = disclaimerText;
 
-        // Check if already accepted
         if (localStorage.getItem('beatforge_disclaimer_accepted') === 'true') {
             overlay.classList.add('hidden');
             return;
@@ -3567,7 +3575,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
                 if (gameOverOverlay) gameOverOverlay.remove();
                 isGameOver = true;
                 isGameOverAnimating = false;
-                isStoryModePlay = false;  // reset story flag on game over
+                isStoryModePlay = false;
                 if (audioSource) try { audioSource.stop(); } catch(e) {}
                 screens.hud.classList.add('hidden');
                 showSongInfo(false);
@@ -4144,7 +4152,6 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         }
         
         editorMode = isEditor;
-        // NOTE: isStoryModePlay is NOT reset here anymore; it's set to true by the story loader just before calling startGame
         const selectedChartId = document.getElementById('chart-select').value;
         currentCharterName = null;
         isGameOver = false;
@@ -4322,7 +4329,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         if (audioSource) try { audioSource.stop(); } catch(e) {}
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
-        isStoryModePlay = false;  // restarting resets story mode play
+        isStoryModePlay = false;
         hidePauseScreen();
         startCountdownAndResume();
     }
@@ -4336,7 +4343,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         if (audioSource) try { audioSource.stop(); } catch(e) {}
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
-        isStoryModePlay = false;  // quitting resets story mode play
+        isStoryModePlay = false;
         screens.pause.classList.add('hidden');
         screens.hud.classList.add('hidden');
         showSongInfo(false);
@@ -4368,7 +4375,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         if (audioSource) try { audioSource.stop(); } catch(e) {}
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
-        isStoryModePlay = false;  // retrying from game over resets story mode play
+        isStoryModePlay = false;
         screens.gameover.classList.add('hidden');
         screens.hud.classList.remove('hidden');
         showSongInfo(true);
@@ -4437,13 +4444,11 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
                 }
             }
             saveCurrency();
-            // Update quest progress (only if not game over)
             if (!isGameOver) {
                 updateQuestProgress();
             }
         }
 
-        // Story Mode reward: beating Sink To The Deep Sea World unlocks Ruka + achievement
         if (isStoryModePlay && currentSongName === "Sink To The Deep Sea World (Static Mix)") {
             if (!rukaUnlocked) {
                 saveUnlockRuka();
@@ -5487,7 +5492,6 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
     }
 
     async function loadStorySong(song) {
-        // Show loading screen
         screens.story.classList.add('hidden');
         screens.loading.classList.remove('hidden');
         const loadingH2 = screens.loading.querySelector('h2');
@@ -5496,34 +5500,28 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         loadingP.innerText = `Preparing "${song.name}"`;
 
         try {
-            // 1) Fetch audio
             const audioBasePath = `Story Mode/Songs/${song.name}`;
             const audioResult = await tryFetchAudio(audioBasePath, song.audioExtensions);
             const arrayBuffer = audioResult.buffer;
 
-            // 2) Compute song id from audio hash (same as upload)
             const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer.slice(0));
             currentSongId = Array.from(new Uint8Array(hashBuffer))
                 .map(b => b.toString(16).padStart(2, '0'))
                 .join('');
 
-            // 3) Decode audio
             if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
             audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
 
-            // 4) Detect BPM (optional, can be overridden by chart)
             const detectedBPM = await detectBPM(audioBuffer);
             currentBPM = detectedBPM;
 
-            // 5) Fetch chart – try multiple extensions and encode spaces
-            const chartBasePath = `Story Mode/Data/${song.name}-Chart`;   // No extension here
-            const chartExtensions = ['.json', '.txt', ''];               // Try these in order
+            const chartBasePath = `Story Mode/Data/${song.name}-Chart`;
+            const chartExtensions = ['.json', '.txt', ''];
             let chartData = null;
             let loadedChartUrl = null;
 
             for (const ext of chartExtensions) {
                 const url = chartBasePath + ext;
-                // Replace spaces with %20 for safety
                 const safeUrl = url.replace(/ /g, '%20');
                 console.log(`Trying chart URL: ${safeUrl}`);
                 try {
@@ -5533,9 +5531,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
                         loadedChartUrl = safeUrl;
                         break;
                     }
-                } catch (e) {
-                    // Not found – try next extension
-                }
+                } catch (e) {}
             }
 
             if (!chartData) {
@@ -5544,12 +5540,10 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
 
             console.log(`Loaded chart from: ${loadedChartUrl}`);
 
-            // Parse the chart data (same format as before)
             let parsedNotes = chartData.notes;
             if (!Array.isArray(parsedNotes)) throw new Error('Invalid chart: notes missing');
             if (chartData.bpm) currentBPM = chartData.bpm;
 
-            // Convert to internal note objects
             storyModeNotes = parsedNotes.map(n => {
                 const note = {
                     time: n[0],
@@ -5566,12 +5560,10 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
                 return note;
             });
 
-            // 6) Set metadata
             currentSongName = song.name;
             currentCharterName = 'Story Mode';
             songDuration = audioBuffer.duration;
 
-            // 7) Configure background video if the audio file is actually a video
             if (/\.(mp4|webm|ogg)$/i.test(audioResult.url)) {
                 videoUrl = audioResult.url;
                 document.getElementById('bg-video').src = videoUrl;
@@ -5582,13 +5574,12 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
             }
             applyBackground();
 
-            // 8) Mark as story mode play and start
             isStoryModePlay = true;
             screens.loading.classList.add('hidden');
             loadingH2.innerText = 'Analyzing Audio & Generating Chart...';
             loadingP.innerText = 'Finding the beats!';
 
-            startGame(false);   // will use storyModeNotes
+            startGame(false);
 
         } catch (error) {
             console.error('Story mode load error:', error);
@@ -5611,7 +5602,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
     loadSkins();
     loadShopFlags();
     loadUnlocks();
-    loadQuests();   // <-- load quest data
+    loadQuests();
     updateAssistDropdown();
     setAssist('lester');
     if (visualizerCanvas) visualizerCanvas.style.display = visualizerEnabled ? 'block' : 'none';
