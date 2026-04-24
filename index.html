@@ -577,7 +577,7 @@
             pointer-events: none;
             opacity: 0.5;
         }
-        /* Left sidebar (categories) - hidden on very small screens */
+        /* Left sidebar (categories) */
         .xp-sidebar {
             width: 150px;
             background: #ece9d8;
@@ -852,6 +852,7 @@
             padding: 8px;
             display: flex;
             flex-direction: column;
+            position: relative;
         }
         #shop-dialogue-text {
             background: #ffffff;
@@ -864,6 +865,22 @@
             min-height: 60px;
             margin-bottom: 8px;
             cursor: pointer;
+        }
+        #dialogue-indicator {
+            position: absolute;
+            bottom: 50px;
+            right: 15px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 12px solid #555;
+            animation: pokeArrowBlink 0.8s infinite alternate;
+            display: none;
+        }
+        @keyframes pokeArrowBlink {
+            from { opacity: 0.3; transform: translateY(0); }
+            to { opacity: 1; transform: translateY(4px); }
         }
         .xp-options {
             display: flex;
@@ -1201,6 +1218,7 @@
                 </div>
                 <div class="xp-dialogue-area">
                     <div id="shop-dialogue-text">* Welcome! Spend your Tokens here.</div>
+                    <div id="dialogue-indicator"></div>
                     <div id="shop-options-container" class="xp-options">
                         <span class="xp-option-btn selected" data-action="shop">Shop</span>
                         <span class="xp-option-btn" data-action="talk">Talk</span>
@@ -2354,7 +2372,6 @@
         if (!q.completed || q.claimed) return;
         q.claimed = true;
         saveQuests();
-        // For band_quest, trigger cutscene instead of normal claim alert
         if (q.id === 'band_quest') {
             startShopCutscene();
         } else {
@@ -2368,8 +2385,6 @@
         const xpContent = document.querySelector('.xp-content');
         if (!xpContent) return;
         xpContent.classList.add('cutscene-mode');
-        
-        // Placeholder cutscene dialogue
         const cutsceneLines = [
             "* ...you actually did it.",
             "* I wasn't sure if you were serious about helping.",
@@ -2378,10 +2393,8 @@
             "* Just wait a little longer."
         ];
         setShopDialogue(cutsceneLines, () => {
-            // end cutscene
             const xp = document.querySelector('.xp-content');
             if (xp) xp.classList.remove('cutscene-mode');
-            // Refresh the shop to show normal layout (missions tab)
             renderShopContent();
         });
     }
@@ -2677,7 +2690,7 @@
                 door.classList.add('hidden');
             }
         }
-        updateShopPing(); // update ping whenever door visibility changes
+        updateShopPing();
     }
 
     // ==================== NOTESKIN SYSTEM ====================
@@ -2934,7 +2947,7 @@
         return true;
     }
 
-    // ==================== SHOP SYSTEM (updated with skins, missions, cutscene) ====================
+    // ==================== SHOP SYSTEM ====================
     const shopItems = [
         { name: "Simplex", cost: 100, description: noteskins.simplex.desc, skinId: 'simplex', type: 'skin' },
         { name: "Step Arrows", cost: 1000, description: noteskins.steparrows.desc, skinId: 'steparrows', type: 'skin' },
@@ -3057,7 +3070,6 @@
     }
     
     function closeShop() {
-        // Remove cutscene mode if active
         const xpContent = document.querySelector('.xp-content');
         if (xpContent) xpContent.classList.remove('cutscene-mode');
         document.getElementById('shop-screen').classList.add('hidden');
@@ -3074,9 +3086,14 @@
     
     function advanceShopDialogue() {
         const dialogueEl = document.getElementById('shop-dialogue-text');
+        const indicator = document.getElementById('dialogue-indicator');
         if (shopDialogueQueue.length > 0) {
             dialogueEl.innerText = shopDialogueQueue.shift();
+            // show indicator if more lines remain
+            if (indicator) indicator.style.display = shopDialogueQueue.length > 0 ? 'block' : 'none';
         } else {
+            // no more lines, hide indicator and call callback
+            if (indicator) indicator.style.display = 'none';
             if (currentDialogueCallback) {
                 currentDialogueCallback();
                 currentDialogueCallback = null;
@@ -3168,14 +3185,25 @@
                 div.className = 'xp-dialogue-option' + (isRukaTopic && !rukaTopicSeen ? ' new-topic' : '');
                 div.innerHTML = `<span>${opt.prompt}</span>`;
                 div.addEventListener('click', () => {
+                    // Enter cutscene mode for talk
+                    const xpContent = document.querySelector('.xp-content');
+                    if (xpContent) xpContent.classList.add('cutscene-mode');
+                    
                     if (isRukaTopic && !rukaTopicSeen) {
                         rukaTopicSeen = true;
                         saveShopFlags();
                         updateDialogueOptions();
                         document.querySelector('[data-action="talk"]').classList.remove('highlight');
                     }
-                    setShopDialogue([...opt.lines], null);
-                    renderShopContent();
+                    // Provide a callback to end cutscene and return to talk list
+                    setShopDialogue([...opt.lines], () => {
+                        const xp = document.querySelector('.xp-content');
+                        if (xp) xp.classList.remove('cutscene-mode');
+                        renderShopContent(); // re-render talk list
+                    });
+                    // Also ensure indicator is shown for first line if more remain
+                    const indicator = document.getElementById('dialogue-indicator');
+                    if (indicator && opt.lines.length > 1) indicator.style.display = 'block';
                 });
                 listDiv.appendChild(div);
             });
@@ -5451,7 +5479,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
     ui.restartSongBtn.addEventListener('click', () => restartSong());
     ui.quitSongBtn.addEventListener('click', () => quitSong());
 
-    // ---- Story Mode Functions (with extension fallback, space encoding, and background video support) ----
+    // ---- Story Mode Functions ----
     function openStoryMode() {
         populateStorySongs();
         screens.story.classList.remove('hidden');
@@ -5484,9 +5512,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
                 if (response.ok) {
                     return { url, buffer: await response.arrayBuffer() };
                 }
-            } catch (e) {
-                // Continue to next extension
-            }
+            } catch (e) {}
         }
         throw new Error(`Audio file not found for "${basePath}" with any of the extensions: ${extensions.join(', ')}`);
     }
