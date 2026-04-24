@@ -2318,6 +2318,233 @@
         saveQuests();
     }
 
+    function loadAchievements() {
+        const saved = localStorage.getItem('beatforge_achievements');
+        if (saved) {
+            try {
+                achievementsUnlocked = new Set(JSON.parse(saved));
+            } catch(e) { achievementsUnlocked = new Set(); }
+        }
+        if (achievementsUnlocked.has('skydiver') && !rukaUnlocked) {
+            // In the old system skydiver gave Ruka; we keep the achievement but won't auto‑unlock Ruka anymore
+            // (it will now be handled by story mode)
+        }
+        renderAchievements();
+    }
+    function saveAchievements() {
+        localStorage.setItem('beatforge_achievements', JSON.stringify([...achievementsUnlocked]));
+    }
+    function unlockAchievement(id, suppressAlert = false) {
+        if (achievementsUnlocked.has(id)) return false;
+        achievementsUnlocked.add(id);
+        saveAchievements();
+        renderAchievements();
+        if (!suppressAlert) {
+            const ach = achievementsList.find(a => a.id === id);
+            if (ach) showAlert(`🏆 Achievement Unlocked: ${ach.name}!\n${ach.hoverDesc}`);
+        }
+        // No longer auto‑unlock Ruka
+        return true;
+    }
+    function isAchievementUnlocked(id) {
+        return achievementsUnlocked.has(id);
+    }
+    function isCheatingAttempt() {
+        if (songDuration < 10) return true;
+        const playableNotes = notes.filter(n => n.col !== -1 && n.col !== LYRIC_LANE).length;
+        return playableNotes === 0;
+    }
+    function tryGrantAchievement(achId) {
+        if (isCheatingAttempt()) {
+            if (!achievementsUnlocked.has('cheater')) {
+                unlockAchievement('cheater');
+                showAlert("⚠️ Cheating detected! You earned the 'cheater.' achievement instead.");
+            } else {
+                showAlert("Cheating detected! You already have the 'cheater.' achievement.");
+            }
+            return false;
+        }
+        if (!achievementsUnlocked.has(achId)) {
+            unlockAchievement(achId);
+            return true;
+        }
+        return false;
+    }
+    function renderAchievements() {
+        const grid = document.getElementById('achievements-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        const visibleAchievements = achievementsList.filter(ach => !ach.hidden || achievementsUnlocked.has(ach.id));
+        visibleAchievements.forEach(ach => {
+            const unlocked = achievementsUnlocked.has(ach.id);
+            const card = document.createElement('div');
+            card.className = `achievement-card ${unlocked ? 'unlocked' : 'locked'} bg-slate-800 rounded-xl p-4 text-center border border-slate-600 transition-all`;
+            if (unlocked) {
+                card.setAttribute('data-ach-id', ach.id);
+                card.addEventListener('click', () => showAchievementDetail(ach));
+            }
+            const iconSpan = document.createElement('div');
+            iconSpan.className = 'achievement-icon mb-2';
+            iconSpan.textContent = ach.icon;
+            const nameSpan = document.createElement('div');
+            nameSpan.className = 'font-bold text-white text-lg';
+            nameSpan.textContent = ach.name;
+            const descSpan = document.createElement('div');
+            descSpan.className = 'text-xs text-slate-400 mt-1';
+            descSpan.textContent = ach.hoverDesc;
+            card.appendChild(iconSpan);
+            card.appendChild(nameSpan);
+            card.appendChild(descSpan);
+            grid.appendChild(card);
+        });
+    }
+    function showAchievementDetail(ach) {
+        const modal = document.getElementById('achievement-detail-modal');
+        document.getElementById('detail-icon').textContent = ach.icon;
+        document.getElementById('detail-name').textContent = ach.name;
+        document.getElementById('detail-desc').textContent = ach.clickDesc;
+        modal.classList.remove('hidden');
+    }
+    function closeAchievementDetail() {
+        document.getElementById('achievement-detail-modal').classList.add('hidden');
+    }
+
+    // Prevent mobile errors from triggering achievement
+    let errorAchievementUnlocked = false;
+    window.onerror = function(message, source, lineno, colno, error) {
+        if (message.includes('play()') || message.includes('Firebase') || message.includes('Network')) {
+            return false;
+        }
+        if (!errorAchievementUnlocked && !achievementsUnlocked.has('how-did-you')) {
+            errorAchievementUnlocked = true;
+            unlockAchievement('how-did-you');
+        }
+        return false;
+    };
+    window.addEventListener('unhandledrejection', function(event) {
+        const reason = event.reason?.toString() || "";
+        if (reason.includes('play()') || reason.includes('Firebase') || reason.includes('Network')) {
+            event.preventDefault();
+            return;
+        }
+        if (!errorAchievementUnlocked && !achievementsUnlocked.has('how-did-you')) {
+            errorAchievementUnlocked = true;
+            unlockAchievement('how-did-you');
+        }
+    });
+
+    function updateLyricDisplay(timeSec) {
+        if (editorMode) return;
+        let latestLyric = null;
+        for (let i = 0; i < notes.length; i++) {
+            const n = notes[i];
+            if (n.col === LYRIC_LANE && n.time <= timeSec) latestLyric = n;
+        }
+        if (latestLyric) {
+            if (latestLyric.text === "") {
+                if (currentLyricText !== "") {
+                    document.getElementById('lyric-display').classList.add('hidden');
+                    currentLyricText = "";
+                    if (currentLyricTimeout) clearTimeout(currentLyricTimeout);
+                }
+            } else if (latestLyric.text !== currentLyricText) {
+                currentLyricText = latestLyric.text;
+                const lyricDiv = document.getElementById('lyric-display');
+                lyricDiv.textContent = currentLyricText;
+                lyricDiv.classList.remove('hidden');
+                if (currentLyricTimeout) clearTimeout(currentLyricTimeout);
+                currentLyricTimeout = setTimeout(() => {
+                    if (document.getElementById('lyric-display')) {
+                        document.getElementById('lyric-display').classList.add('hidden');
+                        currentLyricText = "";
+                    }
+                }, 5000);
+            }
+        } else if (!latestLyric && currentLyricText !== "") {
+            if (currentLyricTimeout) clearTimeout(currentLyricTimeout);
+            currentLyricTimeout = setTimeout(() => {
+                document.getElementById('lyric-display').classList.add('hidden');
+                currentLyricText = "";
+            }, 2000);
+        }
+    }
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    visualizerCanvas = document.getElementById('visualizer-canvas');
+    if (visualizerCanvas) visualizerCtx = visualizerCanvas.getContext('2d');
+    
+    const screens = {
+        start: document.getElementById('start-screen'),
+        settings: document.getElementById('settings-screen'),
+        loading: document.getElementById('loading-screen'),
+        end: document.getElementById('end-screen'),
+        hud: document.getElementById('hud'),
+        leaderboard: document.getElementById('leaderboard-screen'),
+        pause: document.getElementById('pause-screen'),
+        gameover: document.getElementById('gameover-screen'),
+        assist: document.getElementById('assist-screen'),
+        achievements: document.getElementById('achievements-screen'),
+        modifiers: document.getElementById('modifiers-screen'),
+        inventory: document.getElementById('inventory-screen'),
+        credits: document.getElementById('credits-screen'),
+        story: document.getElementById('story-mode-screen')
+    };
+
+    const ui = {
+        score: document.getElementById('score-display'),
+        combo: document.getElementById('combo-display'),
+        error: document.getElementById('error-msg'),
+        fileInput: document.getElementById('audio-upload'),
+        startBtn: document.getElementById('start-btn'),
+        restartBtn: document.getElementById('restart-btn'),
+        openLeaderboardBtn: document.getElementById('open-leaderboards-btn'),
+        closeLeaderboardBtn: document.getElementById('close-leaderboard-btn'),
+        blurSlider: document.getElementById('blur-slider'),
+        blurVal: document.getElementById('blur-val'),
+        dynamicNotesCb: document.getElementById('dynamic-notes-cb'),
+        whiteOutlinesCb: document.getElementById('white-outlines-cb'),
+        visualizerCb: document.getElementById('audio-visualizer-cb'),
+        customColorsContainer: document.getElementById('custom-colors-container'),
+        colorInputs: [
+            document.getElementById('color-0'), document.getElementById('color-1'),
+            document.getElementById('color-2'), document.getElementById('color-3')
+        ],
+        pauseBtn: document.getElementById('pause-btn'),
+        resumeBtn: document.getElementById('resume-btn'),
+        restartSongBtn: document.getElementById('restart-song-btn'),
+        quitSongBtn: document.getElementById('quit-song-btn'),
+        dynamicBgCb: document.getElementById('dynamic-bg-cb'),
+        customBgInput: document.getElementById('custom-bg-input'),
+        clearCustomBg: document.getElementById('clear-custom-bg'),
+        songNameEl: document.getElementById('song-name'),
+        charterCreditEl: document.getElementById('charter-credit'),
+        songInfoContainer: document.getElementById('song-info-container'),
+        healthBarContainer: document.getElementById('health-bar-container'),
+        healthFill: document.getElementById('health-fill'),
+        healthText: document.getElementById('health-text'),
+        assistEffectRotated: document.getElementById('assist-effect-rotated'),
+        gameoverReturnBtn: document.getElementById('gameover-return-btn'),
+        gameoverRetryBtn: document.getElementById('gameover-retry-btn'),
+        gameoverChangeAssistBtn: document.getElementById('gameover-change-assist-btn'),
+        cornerSettingsBtn: document.getElementById('corner-settings-btn'),
+        cornerAssistBtn: document.getElementById('corner-assist-btn'),
+        cornerAchievementsBtn: document.getElementById('corner-achievements-btn'),
+        cornerModifiersBtn: document.getElementById('corner-modifiers-btn'),
+        cornerInventoryBtn: document.getElementById('corner-inventory-btn'),
+        cornerCreditsBtn: document.getElementById('corner-credits-btn'),
+        closeAssistBtn: document.getElementById('close-assist-btn'),
+        changeAssistPauseBtn: document.getElementById('change-assist-pause-btn'),
+        assistCardsContainer: document.getElementById('assist-cards-container'),
+        assistPreviewName: document.getElementById('assist-preview-name'),
+        assistPreviewEffect: document.getElementById('assist-preview-effect'),
+        assistPreviewDesc: document.getElementById('assist-preview-desc'),
+        assistPreviewPortrait: document.getElementById('assist-preview-portrait'),
+        cornerStoryBtn: document.getElementById('corner-story-btn'),
+        closeStoryBtn: document.getElementById('close-story-btn'),
+        storySongList: document.getElementById('story-song-list')
+    };
+
     // ==================== CURRENCY SYSTEM ====================
     let totalFame = 0;
     let totalTokens = 0;
