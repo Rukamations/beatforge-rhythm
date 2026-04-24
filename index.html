@@ -481,6 +481,18 @@
         #shop-door:hover {
             transform: scale(1.1);
         }
+        #shop-ping {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 12px;
+            height: 12px;
+            background-color: #ef4444;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 4px red;
+            z-index: 2;
+        }
 
         /* ===== WINDOWS XP STYLE SHOP ===== */
         #shop-screen {
@@ -1121,7 +1133,9 @@
 </div>
 
 <!-- Shop Door -->
-<div id="shop-door" class="hidden"></div>
+<div id="shop-door" class="hidden">
+    <div id="shop-ping" class="hidden"></div>
+</div>
 
 <!-- Shop Screen -->
 <div id="shop-screen" class="hidden">
@@ -2256,11 +2270,17 @@
                     dailyDate: '',
                     dailyProgress: 0,
                     dailyCompleted: false,
-                    mainQuests: [] // array of { id, progress, completed }
+                    dailyClaimed: false,  // NEW: claim state
+                    mainQuests: [] // array of { id, progress, completed, claimed }
                 };
             }
+            // Ensure new fields exist in old saves
+            if (questData.dailyClaimed === undefined) questData.dailyClaimed = false;
+            questData.mainQuests.forEach(q => {
+                if (q.claimed === undefined) q.claimed = false;
+            });
         } catch (e) {
-            questData = { dailyDate: '', dailyProgress: 0, dailyCompleted: false, mainQuests: [] };
+            questData = { dailyDate: '', dailyProgress: 0, dailyCompleted: false, dailyClaimed: false, mainQuests: [] };
         }
         resetDailyIfNeeded();
     }
@@ -2275,6 +2295,7 @@
             questData.dailyDate = today;
             questData.dailyProgress = 0;
             questData.dailyCompleted = false;
+            questData.dailyClaimed = false; // reset claim for new day
             saveQuests();
         }
     }
@@ -2282,9 +2303,8 @@
     // Unlock a main quest (by id)
     function unlockMainQuest(id) {
         if (!questData.mainQuests.find(q => q.id === id)) {
-            questData.mainQuests.push({ id, progress: 0, completed: false });
+            questData.mainQuests.push({ id, progress: 0, completed: false, claimed: false });
             saveQuests();
-            // Notify if shop is open? We'll just update later.
         }
     }
 
@@ -2296,9 +2316,7 @@
             questData.dailyProgress++;
             if (questData.dailyProgress >= 1) {
                 questData.dailyCompleted = true;
-                // Award Fame
-                totalFame += DAILY_QUEST_REWARD;
-                showAlert(`Daily quest completed! +${DAILY_QUEST_REWARD} Fame`, false);
+                // No longer auto-award Fame
             }
             saveQuests();
         }
@@ -2309,13 +2327,49 @@
                     q.progress++;
                     if (q.progress >= 10) {
                         q.completed = true;
-                        showAlert('Main quest "Complete 10 songs" completed! (No reward yet)', false);
-                        // The reward will be added later
                     }
                 }
             }
         });
         saveQuests();
+        updateShopPing(); // ping may need update
+    }
+
+    // Claim functions
+    function claimDailyReward() {
+        if (!questData.dailyCompleted || questData.dailyClaimed) return;
+        questData.dailyClaimed = true;
+        totalFame += DAILY_QUEST_REWARD;
+        saveCurrency();
+        saveQuests();
+        showAlert(`Daily quest claimed! +${DAILY_QUEST_REWARD} Fame`, false);
+        updateShopPing();
+        if (shopState.mode === 'missions') renderShopContent(); // refresh missions tab if open
+    }
+
+    function claimMainQuest(q) {
+        if (!q.completed || q.claimed) return;
+        q.claimed = true;
+        saveQuests();
+        // For now, no reward, just mark as claimed
+        showAlert('Main quest claimed!', false);
+        updateShopPing();
+        if (shopState.mode === 'missions') renderShopContent();
+    }
+
+    // Shop ping indicator
+    function updateShopPing() {
+        const ping = document.getElementById('shop-ping');
+        if (!ping) return;
+        let showPing = false;
+        if (rukaUnlocked && !rukaTopicSeen) showPing = true;
+        if (questData.dailyCompleted && !questData.dailyClaimed) showPing = true;
+        if (questData.mainQuests.some(q => q.completed && !q.claimed)) showPing = true;
+        if (showPing) {
+            ping.classList.remove('hidden');
+        } else {
+            ping.classList.add('hidden');
+        }
     }
 
     function loadAchievements() {
@@ -2597,6 +2651,7 @@
                 door.classList.add('hidden');
             }
         }
+        updateShopPing(); // update ping whenever door visibility changes
     }
 
     // ==================== NOTESKIN SYSTEM ====================
@@ -3038,7 +3093,7 @@
             shopBtn.classList.remove('selected');
             talkBtn.classList.remove('selected', 'talk-active');
             mediaBtn.classList.remove('selected');
-            headerEl.innerHTML = '<span>Mission</span><span>Progress</span>';
+            headerEl.innerHTML = '<span>Mission</span><span>Progress / Claim</span>';
             itemsList.classList.remove('hidden');
             mediaContainer.classList.add('hidden');
         }
@@ -3106,7 +3161,12 @@
                     <span class="xp-item-name">Daily: Complete 1 song</span>
                     <span style="display: block; font-size: 11px; color: #444;">Reward: ${DAILY_QUEST_REWARD} Fame</span>
                 </div>
-                <span class="xp-item-cost">${dailyProgress}/1</span>
+                <span class="xp-item-cost">
+                    ${questData.dailyClaimed ? 'Claimed' : 
+                      (questData.dailyCompleted ? 
+                        '<button class="bg-green-500 text-white px-2 py-1 rounded" onclick="event.stopPropagation(); window.claimDailyReward()">Claim</button>' : 
+                        `${dailyProgress}/1`)}
+                </span>
             `;
             listDiv.appendChild(dailyItem);
             
@@ -3123,9 +3183,14 @@
                 div.innerHTML = `
                     <div>
                         <span class="xp-item-name">${description}</span>
-                        <span style="display: block; font-size: 11px; color: #444;">${q.completed ? 'Completed' : 'In progress'}</span>
+                        <span style="display: block; font-size: 11px; color: #444;">${q.completed ? (q.claimed ? 'Completed' : 'Claimable') : 'In progress'}</span>
                     </div>
-                    <span class="xp-item-cost">${q.progress}/${requirement}</span>
+                    <span class="xp-item-cost">
+                        ${q.claimed ? 'Claimed' : 
+                          (q.completed ? 
+                            `<button class="bg-green-500 text-white px-2 py-1 rounded" onclick="event.stopPropagation(); window.claimMainQuest(window.questData.mainQuests[${questData.mainQuests.indexOf(q)}])">Claim</button>` : 
+                            `${q.progress}/${requirement}`)}
+                    </span>
                 `;
                 listDiv.appendChild(div);
             });
@@ -3219,7 +3284,7 @@
         const shopScreen = document.getElementById('shop-screen');
         if (shopScreen.classList.contains('hidden')) return;
         if (shopDialogueQueue.length > 0) return;
-        const options = ['shop', 'talk', 'media', 'leave', 'missions']; // missions included
+        const options = ['shop', 'talk', 'media', 'leave'];
         if (e.key === 'ArrowLeft') {
             shopState.selectedIndex = (shopState.selectedIndex - 1 + options.length) % options.length;
             const btns = document.querySelectorAll('.xp-option-btn');
@@ -3278,6 +3343,11 @@
             updateShopMode('missions');
         });
     });
+
+    // Expose claim functions to global scope for inline buttons
+    window.claimDailyReward = claimDailyReward;
+    window.claimMainQuest = claimMainQuest;
+    window.questData = questData; // needed for inline event handlers
 
     // ==================== INVENTORY SCREEN ====================
     function openInventory() {
@@ -3416,7 +3486,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
         });
     }
 
-    // ==================== GAME FLOW & RENDERING (modified for skins) ====================
+    // ==================== GAME FLOW & RENDERING ====================
     function resizeCanvas() {
         const height = window.innerHeight;
         const width = Math.min(400, window.innerWidth * 0.9); 
