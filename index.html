@@ -577,6 +577,11 @@
             pointer-events: none;
             opacity: 0.5;
         }
+        /* Center shopkeeper in cutscene mode */
+        .xp-content.cutscene-mode #shop-keeper {
+            left: 50%;
+            transform: translateX(-50%);
+        }
         /* Left sidebar (categories) */
         .xp-sidebar {
             width: 150px;
@@ -837,7 +842,8 @@
             position: absolute;
             bottom: 0;
             left: 10px;
-            width: 70%;
+            max-width: 300px;
+            width: auto;
             height: auto;
             object-fit: contain;
             filter: drop-shadow(0 0 4px black);
@@ -1012,6 +1018,69 @@
             background: #10b981;
         }
 
+        /* ===== KEY ITEM STYLES ===== */
+        .key-item-card {
+            background: #1e293b;
+            border: 2px solid #475569;
+            border-radius: 16px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .key-item-card:hover {
+            border-color: #fbbf24;
+            transform: scale(1.02);
+        }
+        .key-item-card img {
+            width: 100%;
+            height: 120px;
+            object-fit: contain;
+            margin-bottom: 8px;
+            background: #0f172a;
+            border-radius: 8px;
+        }
+        .key-item-name {
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: white;
+        }
+        #item-detail-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(12px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 45;
+        }
+        #item-detail-modal .modal-content {
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90vw;
+            text-align: center;
+            color: white;
+        }
+        #item-detail-modal img {
+            max-width: 100%;
+            max-height: 300px;
+            object-fit: contain;
+            margin-bottom: 16px;
+            background: #0f172a;
+            border-radius: 8px;
+        }
+        #item-detail-modal h3 {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+        }
+        #item-detail-modal p {
+            color: #cbd5e1;
+            line-height: 1.6;
+        }
+
         /* ===== CREDITS SCREEN ===== */
         #credits-screen .credits-container {
             width: 700px;
@@ -1073,8 +1142,6 @@
             max-height: 300px;
             overflow-y: auto;
             padding-right: 8px;
-            color: white;
-            text-align: left;
         }
         .disclaimer-timer {
             font-size: 1.2rem;
@@ -1242,13 +1309,30 @@
 <!-- Inventory Screen -->
 <div id="inventory-screen" class="screen hidden">
     <div class="inventory-container">
-        <h2 class="inventory-title">📦 Noteskin Inventory</h2>
+        <h2 class="inventory-title">📦 Inventory</h2>
+        <div class="flex gap-4 justify-center mb-6">
+            <button id="tab-noteskins" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-6 rounded-lg transition active-tab">🎨 Noteskins</button>
+            <button id="tab-keyitems" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-6 rounded-lg transition">🔑 Key Items</button>
+        </div>
         <div id="inventory-grid" class="inventory-grid">
             <!-- Skins injected here -->
+        </div>
+        <div id="key-items-grid" class="inventory-grid hidden">
+            <!-- Key items injected here -->
         </div>
         <button id="close-inventory-btn" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg mt-4">
             Close
         </button>
+    </div>
+</div>
+
+<!-- Item Detail Modal (for key items) -->
+<div id="item-detail-modal" class="hidden">
+    <div class="modal-content">
+        <img id="item-detail-img" src="" alt="Item Image">
+        <h3 id="item-detail-name"></h3>
+        <p id="item-detail-desc"></p>
+        <button id="close-item-detail-btn" class="mt-6 bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-lg">Close</button>
     </div>
 </div>
 
@@ -2370,11 +2454,41 @@
         if (shopState.mode === 'missions') renderShopContent();
     }
 
+    // =============== KEY ITEMS SYSTEM ===============
+    let keyItems = [];
+    const placeholderImage = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150"><rect width="150" height="150" fill="%23475569"/><text x="75" y="75" font-size="14" fill="white" text-anchor="middle" dominant-baseline="middle">?</text></svg>';
+
+    function loadKeyItems() {
+        try {
+            const saved = localStorage.getItem('beatforge_key_items');
+            if (saved) {
+                keyItems = JSON.parse(saved);
+            } else {
+                keyItems = [];
+            }
+        } catch(e) { keyItems = []; }
+    }
+
+    function saveKeyItems() {
+        localStorage.setItem('beatforge_key_items', JSON.stringify(keyItems));
+    }
+
+    function addKeyItem(id, name, description, imageUrl) {
+        if (keyItems.find(item => item.id === id)) return; // already owned
+        keyItems.push({ id, name, description, imageUrl: imageUrl || placeholderImage });
+        saveKeyItems();
+    }
+
     function claimMainQuest(q) {
         if (!q.completed || q.claimed) return;
         q.claimed = true;
         saveQuests();
         if (q.id === 'band_quest') {
+            // Reward the two key items
+            addKeyItem('strange_letter', 'Strange Letter', 'A mysterious letter written in an unknown cipher. The only understandable part is the number 3301 at the bottom.', placeholderImage);
+            addKeyItem('aki_picture', 'Picture of Aki', 'A photograph of the missing band member Aki. She has a distinctive hat with a strange symbol.', placeholderImage);
+            showAlert('You received two key items: "Strange Letter" and "Picture of Aki". Check your inventory!', false);
+            // Also trigger the cutscene
             startShopCutscene();
         } else {
             showAlert('Main quest claimed!', false);
@@ -3090,11 +3204,20 @@
         const dialogueEl = document.getElementById('shop-dialogue-text');
         const indicator = document.getElementById('dialogue-indicator');
         if (shopDialogueQueue.length > 0) {
-            dialogueEl.textContent = shopDialogueQueue.shift();
-            // show indicator if more lines remain
-            if (indicator) indicator.style.display = shopDialogueQueue.length > 0 ? 'block' : 'none';
+            dialogueEl.innerText = shopDialogueQueue.shift();
+            // When the last line appears, immediately exit any cutscene layout
+            if (shopDialogueQueue.length === 0) {
+                const xp = document.querySelector('.xp-content');
+                if (xp) xp.classList.remove('cutscene-mode');
+            }
+            if (indicator) {
+                if (shopDialogueQueue.length > 0 || currentDialogueCallback) {
+                    indicator.style.display = 'block';
+                } else {
+                    indicator.style.display = 'none';
+                }
+            }
         } else {
-            // no more lines, hide indicator and call callback
             if (indicator) indicator.style.display = 'none';
             if (currentDialogueCallback) {
                 currentDialogueCallback();
@@ -3104,6 +3227,10 @@
     }
     
     function updateShopMode(mode) {
+        // Always exit cutscene mode when changing shop tabs
+        const xp = document.querySelector('.xp-content');
+        if (xp) xp.classList.remove('cutscene-mode');
+        
         shopState.mode = mode;
         const shopBtn = document.querySelector('[data-action="shop"]');
         const talkBtn = document.querySelector('[data-action="talk"]');
@@ -3187,30 +3314,21 @@
                 div.className = 'xp-dialogue-option' + (isRukaTopic && !rukaTopicSeen ? ' new-topic' : '');
                 div.innerHTML = `<span>${opt.prompt}</span>`;
                 div.addEventListener('click', () => {
-                    const lines = [...opt.lines]; // copy
-                    if (lines.length > 1) {
-                        // Enter cutscene layout only for multi‑line topics
-                        const xpContent = document.querySelector('.xp-content');
-                        if (xpContent) xpContent.classList.add('cutscene-mode');
-                    }
-                    // Handle “About Ruka…” new topic first‑time flag
                     if (isRukaTopic && !rukaTopicSeen) {
                         rukaTopicSeen = true;
                         saveShopFlags();
                         updateDialogueOptions();
                         document.querySelector('[data-action="talk"]').classList.remove('highlight');
                     }
-                    setShopDialogue(lines, () => {
-                        // This callback fires when the dialogue queue is empty (all lines shown)
+                    if (opt.lines.length > 1) {
                         const xpContent = document.querySelector('.xp-content');
-                        if (xpContent) xpContent.classList.remove('cutscene-mode');
-                        renderShopContent();   // refresh the talk list
-                    });
-                    // Show the “press to continue” triangle if multiple lines
-                    const indicator = document.getElementById('dialogue-indicator');
-                    if (indicator) {
-                        indicator.style.display = (lines.length > 1) ? 'block' : 'none';
+                        if (xpContent) xpContent.classList.add('cutscene-mode');
                     }
+                    setShopDialogue([...opt.lines], () => {
+                        const xp = document.querySelector('.xp-content');
+                        if (xp) xp.classList.remove('cutscene-mode');
+                        renderShopContent();
+                    });
                 });
                 listDiv.appendChild(div);
             });
@@ -3396,17 +3514,40 @@
     window.claimMainQuest = claimMainQuest;
     window.questData = questData;
 
-    // ==================== INVENTORY SCREEN ====================
+    // ==================== INVENTORY SCREEN WITH TABS ====================
+    let currentInventoryTab = 'noteskins';
+
     function openInventory() {
+        currentInventoryTab = 'noteskins';
         renderInventory();
         screens.inventory.classList.remove('hidden');
     }
+
     function closeInventory() {
         screens.inventory.classList.add('hidden');
     }
+
     function renderInventory() {
-        const grid = document.getElementById('inventory-grid');
-        grid.innerHTML = '';
+        const noteskinsGrid = document.getElementById('inventory-grid');
+        const keyItemsGrid = document.getElementById('key-items-grid');
+        const tabNoteskins = document.getElementById('tab-noteskins');
+        const tabKeyItems = document.getElementById('tab-keyitems');
+
+        // Update active tab styles
+        if (currentInventoryTab === 'noteskins') {
+            tabNoteskins.classList.add('bg-slate-600');
+            tabKeyItems.classList.remove('bg-slate-600');
+            noteskinsGrid.classList.remove('hidden');
+            keyItemsGrid.classList.add('hidden');
+        } else {
+            tabKeyItems.classList.add('bg-slate-600');
+            tabNoteskins.classList.remove('bg-slate-600');
+            keyItemsGrid.classList.remove('hidden');
+            noteskinsGrid.classList.add('hidden');
+        }
+
+        // Render noteskins (unchanged)
+        noteskinsGrid.innerHTML = '';
         const skinIds = ['default', 'simplex', 'steparrows', 'taiko'];
         skinIds.forEach(id => {
             const skin = noteskins[id];
@@ -3428,11 +3569,7 @@
                 const x = i * colWidth;
                 const activeColor = currentNoteColors[i];
                 skin.drawReceptor(pCtx, x, 70, colWidth, 20, activeColor, false);
-                if (skin === noteskins.steparrows) {
-                    skin.drawNote(pCtx, x, 40, colWidth, 20, i, activeColor, true);
-                } else {
-                    skin.drawNote(pCtx, x, 40, colWidth, 20, i, activeColor, true);
-                }
+                skin.drawNote(pCtx, x, 40, colWidth, 20, i, activeColor, true);
             }
             previewDiv.appendChild(previewCanvas);
             card.appendChild(previewDiv);
@@ -3449,14 +3586,59 @@
             equipBtn.textContent = equippedSkin === id ? 'Equipped' : 'Equip';
             equipBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (equipSkin(id)) {
-                    renderInventory();
-                }
+                if (equipSkin(id)) renderInventory();
             });
             card.appendChild(equipBtn);
-            grid.appendChild(card);
+            noteskinsGrid.appendChild(card);
         });
+
+        // Render key items
+        keyItemsGrid.innerHTML = '';
+        if (keyItems.length === 0) {
+            keyItemsGrid.innerHTML = '<p class="text-slate-400 col-span-full text-center">You have no key items yet.</p>';
+        } else {
+            keyItems.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'key-item-card';
+                const img = document.createElement('img');
+                img.src = item.imageUrl;
+                img.alt = item.name;
+                const name = document.createElement('div');
+                name.className = 'key-item-name';
+                name.textContent = item.name;
+                card.appendChild(img);
+                card.appendChild(name);
+                card.addEventListener('click', () => showItemDetail(item));
+                keyItemsGrid.appendChild(card);
+            });
+        }
     }
+
+    function showItemDetail(item) {
+        const modal = document.getElementById('item-detail-modal');
+        document.getElementById('item-detail-img').src = item.imageUrl;
+        document.getElementById('item-detail-name').textContent = item.name;
+        document.getElementById('item-detail-desc').textContent = item.description;
+        modal.classList.remove('hidden');
+    }
+
+    document.getElementById('close-item-detail-btn').addEventListener('click', () => {
+        document.getElementById('item-detail-modal').classList.add('hidden');
+    });
+    document.getElementById('item-detail-modal').addEventListener('click', (e) => {
+        if (e.target === document.getElementById('item-detail-modal')) {
+            document.getElementById('item-detail-modal').classList.add('hidden');
+        }
+    });
+
+    document.getElementById('tab-noteskins').addEventListener('click', () => {
+        currentInventoryTab = 'noteskins';
+        renderInventory();
+    });
+    document.getElementById('tab-keyitems').addEventListener('click', () => {
+        currentInventoryTab = 'keyitems';
+        renderInventory();
+    });
 
     ui.cornerInventoryBtn.addEventListener('click', openInventory);
     document.getElementById('close-inventory-btn').addEventListener('click', closeInventory);
@@ -3489,13 +3671,7 @@ The main inspirations for this game to exist are AudioSurf 2 for being the first
         const overlay = document.getElementById('disclaimer-overlay');
         const acceptBtn = document.getElementById('disclaimer-accept-btn');
         const timerSpan = document.getElementById('disclaimer-timer');
-        const textDiv = document.getElementById('disclaimer-text');
-
-        if (!overlay || !acceptBtn || !timerSpan || !textDiv) {
-            console.error('Disclaimer elements missing');
-            return;
-        }
-
+        
         const disclaimerText = `This game was generated almost entirely through conversations with AI (DeepSeek and Gemini). 
 It is a passion project made almost entirely when I have free time during school classes. I would love to learn HTML and make this better AND by hand, but I currently can't.
 
@@ -3506,9 +3682,8 @@ Please note:
 - Your progress is saved locally in your browser.
 
 Thank you for playing, and I hope you enjoy this little rhythm game!`;
-        textDiv.textContent = disclaimerText;
+        document.getElementById('disclaimer-text').innerText = disclaimerText;
 
-        // Check if already accepted
         if (localStorage.getItem('beatforge_disclaimer_accepted') === 'true') {
             overlay.classList.add('hidden');
             return;
@@ -3516,7 +3691,7 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
 
         let secondsLeft = 10;
         timerSpan.textContent = secondsLeft;
-
+        
         const interval = setInterval(() => {
             secondsLeft--;
             timerSpan.textContent = secondsLeft;
@@ -5637,13 +5812,13 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
     }
 
     // ==================== INITIALIZATION ====================
-    // Disclaimer MUST be initialized early, before anything else touches localStorage
     initDisclaimer();
     loadCurrency();
     loadSkins();
     loadShopFlags();
     loadUnlocks();
     loadQuests();
+    loadKeyItems();   // <-- load key items
     updateAssistDropdown();
     setAssist('lester');
     if (visualizerCanvas) visualizerCanvas.style.display = visualizerEnabled ? 'block' : 'none';
@@ -5656,4 +5831,4 @@ Thank you for playing, and I hope you enjoy this little rhythm game!`;
     updateDoorVisibility();
 </script>
 </body>
-    </html>
+</html>
